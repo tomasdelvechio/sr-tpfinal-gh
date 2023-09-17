@@ -1,6 +1,14 @@
+"""
+Script que parte de una busqueda de repositorios y recopila usuarios, repos e interacciones
+"""
+
+import sys
 import json
+import uuid
+import shutil
 from pathlib import Path
-import time
+
+import pandas as pd
 
 from github import enable_console_debug_logging
 from github import Github
@@ -15,8 +23,16 @@ CFGFILE         = BASEDIR / "configs.json"
 DATADIR         = BASEDIR / "datasets"
 REPOCSV         = DATADIR / "repositories.csv"
 INTERACTIONCSV  = DATADIR / "interactions.csv"
-USRSCSV         = DATADIR / "users.csv"
-#OUTPUTDIR = Path(cfg("output")) / "01-SCRAPING-CATEGORIES"
+USERSCSV        = DATADIR / "users.csv"
+OUTPUTDIR       = BASEDIR / "output/01-repositories"
+
+FIELDSEPARATOR  = '\t'
+TOPICSEPARATOR  = ';'
+
+INTERACTION_PER_REPO_LIMIT  = 3 # None for iterate all users
+REPOSITORIES_LIMIT          = 5 # None for iterate all repos
+
+FLUSH_BATCH = 2    # number of registers to flush data to disk - None for no flush
 #
 ########################################################################
 
@@ -27,20 +43,50 @@ cfg = json.load(open(CFGFILE))
 if cfg["debug"]:
     enable_console_debug_logging()
 
+# backup de todo lo que toca este script por las dudas
+if cfg["backups"]:
+    suffix = "".join(str(uuid.uuid4()).split("-"))
+    
+    # Backup del directorio de salida
+    OUTPUTDIR_BKP = BASEDIR / f"output/01-repositories-{suffix}"
+    shutil.copytree(str(OUTPUTDIR), str(OUTPUTDIR_BKP))
+    
+    # Backup del dataset generado
+    DATADIR_BKP = BASEDIR / f"datasets-{suffix}"
+    shutil.copytree(str(DATADIR), str(DATADIR_BKP))
+
 # auth con github
 auth = Auth.Token(cfg["access_token"])
 g = Github(auth=auth)
 
-#for repo in g.get_user().get_repos():
-#    print(repo.name)
+# Levantamos lo ya escaneado mientras nos de la RAM para poder retomar cuando se corta
+scanned_repos = None
+scanned_interactions = None
+if REPOCSV.is_file() and INTERACTIONCSV.is_file():
+    try:
+        scanned_repos = set(pd.read_csv(REPOCSV, usecols=['id'], sep=FIELDSEPARATOR, header=0).id.unique())
+        scanned_interactions = set(pd.read_csv(INTERACTIONCSV, usecols=['repository', 'user'], sep=FIELDSEPARATOR, header=0).to_records(index=False).tolist())
+    except ValueError as e:
+        pass
+        #print("Revise si los archivos del dataset contienen los headers.")
+        #sys.exit(1)
 
-with open(REPOCSV, 'a') as f_repos:
+with open(REPOCSV, 'a') as f_repos, open(INTERACTIONCSV, 'a') as f_inter, open(USERSCSV, 'a') as f_users:
     i = 0
-    header = True
+    header = hp.writeheader(REPOCSV)
     for repo in g.search_repositories("python", sort='stars', order='desc', topic="machine-learning"):
-        # Primero traemos información extra del repo (cada linea es un nuevo pedido a la API)
-        lista_de_lenguajes = hp.get_languages_list(repo)
-        time.sleep(1)
+        # Cada iteración del for es un nuevo pedido a la API
+        hp.esperar()
+        
+        if scanned_repos is not None and repo.full_name in scanned_repos:
+            print(f"[R]: {repo.full_name} already scanned. Skipping...")
+            continue
+        print(f"{i} [R]: {repo.full_name}")
+        
+        ################################################################
+        # Parte 1 - Armamos el dataset del repo 
+        lista_de_lenguajes = hp.get_languages_list(repo) # esto llama a la API
+        hp.esperar()
         
         repo_data = {
             "id": repo.full_name,
@@ -49,17 +95,71 @@ with open(REPOCSV, 'a') as f_repos:
             "stars": repo.stargazers_count,
             "watchers": repo.watchers_count,
             "issues": repo.open_issues_count, # issues + prs
-            "about": repo.description,
+            "about": hp.cleantxt(repo.description),
             "subscribers": repo.subscribers_count,
             "archived": repo.archived,
-            "topics": ",".join(repo.topics),
-            "language": ",".join(lista_de_lenguajes),
+            "topics": TOPICSEPARATOR.join(repo.topics),
+            "language": TOPICSEPARATOR.join(lista_de_lenguajes),
         }
-        time.sleep(1)
         if header:
-            f_repos.write(",".join(repo_data.keys()) + "\n")
+            # primer pasada, escribo el header
+            f_repos.write(FIELDSEPARATOR.join(repo_data.keys()) + "\n")
             header = False
-        f_repos.write(",".join([str(item) for item in repo_data.values()]) + "\n")
+        f_repos.write(FIELDSEPARATOR.join([str(item) for item in repo_data.values()]) + "\n")
+        
+        ################################################################
+        # Parte 2 - Armamos el dataset de interacciones
+        stars = repo.get_stargazers_with_dates() # llamada a la api
+        hp.esperar()
+        
+        j = 0
+        header = hp.writeheader(INTERACTIONCSV)
+        for interaction in stars:
+            interaction_data = {
+                "repository": repo.full_name,
+                "user": interaction.user.login, # llamada a la api
+                "date": interaction.starred_at,
+            }
+            if scanned_interactions is not None and (repo.full_name, interaction.user.login) in scanned_interactions:
+                print(f"[I]: [R] {repo.full_name} -> [U] {interaction.user.login} already scanned. Skipping...")
+                continue
+            print(f"  {i}.{j} [I]: [R] {repo.full_name} -> [U] {interaction.user.login}")
+
+            hp.esperar()
+            user = interaction.user
+            users_data = {
+                "id": user.login,
+                "gh_id": user.id,
+                "name": user.name,
+                "bio": hp.cleantxt(user.bio),
+                "blog": user.blog,
+                "company": user.company,
+                "location": user.location,
+                "creacion": user.created_at,
+                "email": user.email,
+                "following": user.following,
+                "followers": user.followers,
+            }
+            hp.esperar()
+            if header:
+                # primer pasada, escribo el header
+                f_inter.write(FIELDSEPARATOR.join(interaction_data.keys()) + "\n")
+                f_users.write(FIELDSEPARATOR.join(users_data.keys()) + "\n")
+                header = False
+            f_inter.write(FIELDSEPARATOR.join([str(item) for item in interaction_data.values()]) + "\n")
+            f_users.write(FIELDSEPARATOR.join([str(item) for item in users_data.values()]) + "\n")
+            
+            if j % FLUSH_BATCH == 0:
+                f_inter.flush()
+                f_users.flush()
+            # Maneja la cantidad de interacciones a recuperar por cada repositorio
+            j += 1
+            if INTERACTION_PER_REPO_LIMIT is not None and j > INTERACTION_PER_REPO_LIMIT:
+                break
+
+        if i % FLUSH_BATCH == 0:
+            f_repos.flush()
+        # Maneja la cantidad de repos a recuperar
         i += 1
-        if i > 10:
+        if REPOSITORIES_LIMIT is not None and i > REPOSITORIES_LIMIT:
             break
