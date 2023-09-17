@@ -1,3 +1,5 @@
 {
-    "access_token": "some_access_token"
+    "access_token": "some_access_token",
+    "debug": false,
+    "backups": false
 }
