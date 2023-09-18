@@ -29,10 +29,10 @@ OUTPUTDIR       = BASEDIR / "output/01-repositories"
 FIELDSEPARATOR  = '\t'
 TOPICSEPARATOR  = ';'
 
-INTERACTION_PER_REPO_LIMIT  = 3 # None for iterate all users
-REPOSITORIES_LIMIT          = 5 # None for iterate all repos
+INTERACTION_PER_REPO_LIMIT  = 50 # None for iterate all users
+REPOSITORIES_LIMIT          = 100 # None for iterate all repos
 
-FLUSH_BATCH = 2    # number of registers to flush data to disk - None for no flush
+FLUSH_BATCH = 20    # number of registers to flush data to disk - None for no flush
 #
 ########################################################################
 
@@ -62,10 +62,12 @@ g = Github(auth=auth)
 # Levantamos lo ya escaneado mientras nos de la RAM para poder retomar cuando se corta
 scanned_repos = None
 scanned_interactions = None
+scanned_users = None
 if REPOCSV.is_file() and INTERACTIONCSV.is_file():
     try:
         scanned_repos = set(pd.read_csv(REPOCSV, usecols=['id'], sep=FIELDSEPARATOR, header=0).id.unique())
         scanned_interactions = set(pd.read_csv(INTERACTIONCSV, usecols=['repository', 'user'], sep=FIELDSEPARATOR, header=0).to_records(index=False).tolist())
+        scanned_users = set(pd.read_csv(USERSCSV, usecols=['id'], sep=FIELDSEPARATOR, header=0).id.unique())
     except ValueError as e:
         pass
         #print("Revise si los archivos del dataset contienen los headers.")
@@ -80,32 +82,34 @@ with open(REPOCSV, 'a') as f_repos, open(INTERACTIONCSV, 'a') as f_inter, open(U
         
         if scanned_repos is not None and repo.full_name in scanned_repos:
             print(f"[R]: {repo.full_name} already scanned. Skipping...")
-            continue
-        print(f"{i} [R]: {repo.full_name}")
-        
-        ################################################################
-        # Parte 1 - Armamos el dataset del repo 
-        lista_de_lenguajes = hp.get_languages_list(repo) # esto llama a la API
-        hp.esperar()
-        
-        repo_data = {
-            "id": repo.full_name,
-            "es_fork": repo.fork,
-            "forks": repo.forks_count,
-            "stars": repo.stargazers_count,
-            "watchers": repo.watchers_count,
-            "issues": repo.open_issues_count, # issues + prs
-            "about": hp.cleantxt(repo.description),
-            "subscribers": repo.subscribers_count,
-            "archived": repo.archived,
-            "topics": TOPICSEPARATOR.join(repo.topics),
-            "language": TOPICSEPARATOR.join(lista_de_lenguajes),
-        }
-        if header:
-            # primer pasada, escribo el header
-            f_repos.write(FIELDSEPARATOR.join(repo_data.keys()) + "\n")
-            header = False
-        f_repos.write(FIELDSEPARATOR.join([str(item) for item in repo_data.values()]) + "\n")
+        else:
+            # Entra acá si no tiene el repo, para bajarlo y guardarlo
+            scanned_repos.add(repo.full_name)
+            print(f"{i} [R]: {repo.full_name}")
+            
+            ################################################################
+            # Parte 1 - Armamos el dataset del repo 
+            lista_de_lenguajes = hp.get_languages_list(repo) # esto llama a la API
+            hp.esperar()
+            
+            repo_data = {
+                "id": repo.full_name,
+                "es_fork": repo.fork,
+                "forks": repo.forks_count,
+                "stars": repo.stargazers_count,
+                "watchers": repo.watchers_count,
+                "issues": repo.open_issues_count, # issues + prs
+                "about": hp.cleantxt(repo.description),
+                "subscribers": repo.subscribers_count,
+                "archived": repo.archived,
+                "topics": TOPICSEPARATOR.join(repo.topics),
+                "language": TOPICSEPARATOR.join(lista_de_lenguajes),
+            }
+            if header:
+                # primer pasada, escribo el header
+                f_repos.write(FIELDSEPARATOR.join(repo_data.keys()) + "\n")
+                header = False
+            f_repos.write(FIELDSEPARATOR.join([str(item) for item in repo_data.values()]) + "\n")
         
         ################################################################
         # Parte 2 - Armamos el dataset de interacciones
@@ -120,35 +124,42 @@ with open(REPOCSV, 'a') as f_repos, open(INTERACTIONCSV, 'a') as f_inter, open(U
                 "user": interaction.user.login, # llamada a la api
                 "date": interaction.starred_at,
             }
-            if scanned_interactions is not None and (repo.full_name, interaction.user.login) in scanned_interactions:
-                print(f"[I]: [R] {repo.full_name} -> [U] {interaction.user.login} already scanned. Skipping...")
-                continue
-            print(f"  {i}.{j} [I]: [R] {repo.full_name} -> [U] {interaction.user.login}")
+            hp.esperar()
 
-            hp.esperar()
-            user = interaction.user
-            users_data = {
-                "id": user.login,
-                "gh_id": user.id,
-                "name": user.name,
-                "bio": hp.cleantxt(user.bio),
-                "blog": user.blog,
-                "company": user.company,
-                "location": user.location,
-                "creacion": user.created_at,
-                "email": user.email,
-                "following": user.following,
-                "followers": user.followers,
-            }
-            hp.esperar()
             if header:
                 # primer pasada, escribo el header
                 f_inter.write(FIELDSEPARATOR.join(interaction_data.keys()) + "\n")
                 f_users.write(FIELDSEPARATOR.join(users_data.keys()) + "\n")
                 header = False
-            f_inter.write(FIELDSEPARATOR.join([str(item) for item in interaction_data.values()]) + "\n")
-            f_users.write(FIELDSEPARATOR.join([str(item) for item in users_data.values()]) + "\n")
-            
+
+            if scanned_interactions is not None and (repo.full_name, interaction.user.login) in scanned_interactions:
+                print(f"  [I]: [R] {repo.full_name} -> [U] {interaction.user.login} already scanned. Skipping...")
+            else:
+                # Es una interacción que no tengo, escanearla
+                scanned_interactions.add((repo.full_name, interaction.user.login))
+                print(f"  {i}.{j} [I]: [R] {repo.full_name} -> [U] {interaction.user.login}")
+                f_inter.write(FIELDSEPARATOR.join([str(item) for item in interaction_data.values()]) + "\n")
+
+            if scanned_users is not None and interaction.user.login in scanned_users:
+                print(f"  [U]: {interaction.user.login} already scanned. Skipping...")
+            else:
+                # Es un usuario que no tengo, escanearlo
+                user = interaction.user
+                users_data = {
+                    "id": user.login,
+                    "gh_id": user.id,
+                    "name": user.name,
+                    "bio": hp.cleantxt(user.bio),
+                    "blog": user.blog,
+                    "company": user.company,
+                    "location": user.location,
+                    "creacion": user.created_at,
+                    "email": user.email,
+                    "following": user.following,
+                    "followers": user.followers,
+                }
+                f_users.write(FIELDSEPARATOR.join([str(item) for item in users_data.values()]) + "\n")
+            hp.esperar()
             if j % FLUSH_BATCH == 0:
                 f_inter.flush()
                 f_users.flush()
