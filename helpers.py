@@ -43,3 +43,24 @@ def writeheader(file: Path) -> bool:
     En dicho caso, el header debería ser escrito. En cualquier otro caso, no.
     """
     return file.is_file() and file.stat().st_size == 0
+
+def save_repo(repo, f_repos, field_sep='\t', topic_sep=';', write_header=False):
+    lista_de_lenguajes = get_languages_list(repo) # esto llama a la API
+    esperar()
+
+    repo_data = {
+        "id": repo.full_name,
+        "es_fork": repo.fork,
+        "forks": repo.forks_count,
+        "stars": repo.stargazers_count,
+        "watchers": repo.watchers_count,
+        "issues": repo.open_issues_count, # issues + prs
+        "about": cleantxt(repo.description),
+        "subscribers": repo.subscribers_count,
+        "archived": repo.archived,
+        "topics": topic_sep.join(repo.topics),
+        "language": topic_sep.join(lista_de_lenguajes),
+    }
+    if write_header:
+        f_repos.write(field_sep.join(repo_data.keys()) + "\n")
+    f_repos.write(field_sep.join([str(item) for item in repo_data.values()]) + "\n")
