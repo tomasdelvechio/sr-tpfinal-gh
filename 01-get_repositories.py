@@ -70,8 +70,6 @@ if REPOCSV.is_file() and INTERACTIONCSV.is_file():
         scanned_users = set(pd.read_csv(USERSCSV, usecols=['id'], sep=FIELDSEPARATOR, header=0).id.unique())
     except ValueError as e:
         pass
-        #print("Revise si los archivos del dataset contienen los headers.")
-        #sys.exit(1)
 
 with open(REPOCSV, 'a') as f_repos, open(INTERACTIONCSV, 'a') as f_inter, open(USERSCSV, 'a') as f_users:
     i = 0
@@ -85,6 +83,7 @@ with open(REPOCSV, 'a') as f_repos, open(INTERACTIONCSV, 'a') as f_inter, open(U
         else:
             # Entra acá si no tiene el repo, para bajarlo y guardarlo
             scanned_repos.add(repo.full_name)
+            i += 1
             print(f"{i} [R]: {repo.full_name}")
             
             ################################################################
@@ -132,13 +131,17 @@ with open(REPOCSV, 'a') as f_repos, open(INTERACTIONCSV, 'a') as f_inter, open(U
                 f_users.write(FIELDSEPARATOR.join(users_data.keys()) + "\n")
                 header = False
 
+            # Maneja la cantidad de interacciones a recuperar por cada repositorio
             if scanned_interactions is not None and (repo.full_name, interaction.user.login) in scanned_interactions:
                 print(f"  [I]: [R] {repo.full_name} -> [U] {interaction.user.login} already scanned. Skipping...")
             else:
                 # Es una interacción que no tengo, escanearla
                 scanned_interactions.add((repo.full_name, interaction.user.login))
+                j += 1
                 print(f"  {i}.{j} [I]: [R] {repo.full_name} -> [U] {interaction.user.login}")
                 f_inter.write(FIELDSEPARATOR.join([str(item) for item in interaction_data.values()]) + "\n")
+                
+                hp.esperar()
 
             if scanned_users is not None and interaction.user.login in scanned_users:
                 print(f"  [U]: {interaction.user.login} already scanned. Skipping...")
@@ -159,18 +162,16 @@ with open(REPOCSV, 'a') as f_repos, open(INTERACTIONCSV, 'a') as f_inter, open(U
                     "followers": user.followers,
                 }
                 f_users.write(FIELDSEPARATOR.join([str(item) for item in users_data.values()]) + "\n")
-            hp.esperar()
+
             if j % FLUSH_BATCH == 0:
                 f_inter.flush()
                 f_users.flush()
-            # Maneja la cantidad de interacciones a recuperar por cada repositorio
-            j += 1
+
             if INTERACTION_PER_REPO_LIMIT is not None and j > INTERACTION_PER_REPO_LIMIT:
                 break
 
         if i % FLUSH_BATCH == 0:
             f_repos.flush()
         # Maneja la cantidad de repos a recuperar
-        i += 1
         if REPOSITORIES_LIMIT is not None and i > REPOSITORIES_LIMIT:
             break
