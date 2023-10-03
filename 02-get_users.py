@@ -92,14 +92,10 @@ if REPOCSV.is_file() and INTERACTIONCSV.is_file():
     except ValueError as e:
         pass
 
-# data extra de los repos que no se recopilaron en el script 01-get_repositories
-users_extra_data = pd.DataFrame(columns=['id', 'avatar_url'])
-
 with open(REPOCSV, 'a') as f_repos, open(INTERACTIONCSV, 'a') as f_inter, open(USERSCSV, 'a') as f_users:
     i = 0
     for username in scanned_users:
         user = g.get_user(username)
-        users_extra_data = pd.concat([pd.DataFrame([[username, user.avatar_url]], columns=users_extra_data.columns), users_extra_data], ignore_index=True)
         
         # Para cada user recuperar todos los repos favs por el
         repos_stars_from_user = user.get_starred()
@@ -162,6 +158,3 @@ with open(REPOCSV, 'a') as f_repos, open(INTERACTIONCSV, 'a') as f_inter, open(U
 
 # Al finalizar este script, esperamos que para TODOS los usuarios de nuestra base
 #   tengamos TODOS los repos con los que interactuaron
-
-path_users_extra_data = OUTPUTDIR / "users_extra_data.csv"
-users_extra_data.to_csv(path_users_extra_data)
