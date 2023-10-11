@@ -26,6 +26,7 @@ import pandas as pd
 from github import enable_console_debug_logging
 from github import Github
 from github import Auth
+from github import GithubException
 
 import helpers as hp
 
@@ -117,39 +118,42 @@ with open(REPOCSV, 'a') as f_repos, open(INTERACTIONCSV, 'a') as f_inter, open(U
             hp.esperar()
             
             j = 0
-            for interaction in stars:
-                if scanned_users is not None and interaction.user.login not in scanned_users:
-                    # Si el usuario no está en la base, ignoro la interacción
-                    print(f"  [U]: {interaction.user.login} not in base. Skipping...")
-                    continue
-                else:
-                    print(f"  [U]: {interaction.user.login} present. Check interaction...")
+            try:
+                for interaction in stars:
+                    if scanned_users is not None and interaction.user.login not in scanned_users:
+                        # Si el usuario no está en la base, ignoro la interacción
+                        print(f"  [U]: {interaction.user.login} not in base. Skipping...")
+                        continue
+                    else:
+                        print(f"  [U]: {interaction.user.login} present. Check interaction...")
 
-                interaction_data = {
-                    "repository": repo.full_name,
-                    "user": interaction.user.login, # llamada a la api
-                    "date": interaction.starred_at,
-                }
-                hp.esperar()
-
-                # Maneja la cantidad de interacciones a recuperar por cada repositorio
-                if scanned_interactions is not None and (repo.full_name, interaction.user.login) in scanned_interactions:
-                    print(f"  [I]: [R] {repo.full_name} -> [U] {interaction.user.login} already scanned. Skipping...")
-                else:
-                    # Es una interacción que no tengo, escanearla
-                    scanned_interactions.add((repo.full_name, interaction.user.login))
-                    j += 1
-                    print(f"  {i}.{j} [I]: [R] {repo.full_name} -> [U] {interaction.user.login}")
-                    f_inter.write(FIELDSEPARATOR.join([str(item) for item in interaction_data.values()]) + "\n")
+                    interaction_data = {
+                        "repository": repo.full_name,
+                        "user": interaction.user.login, # llamada a la api
+                        "date": interaction.starred_at,
+                    }
                     hp.esperar()
 
-                if j % FLUSH_BATCH == 0:
-                    f_inter.flush()
-                    f_users.flush()
+                    # Maneja la cantidad de interacciones a recuperar por cada repositorio
+                    if scanned_interactions is not None and (repo.full_name, interaction.user.login) in scanned_interactions:
+                        print(f"  [I]: [R] {repo.full_name} -> [U] {interaction.user.login} already scanned. Skipping...")
+                    else:
+                        # Es una interacción que no tengo, escanearla
+                        scanned_interactions.add((repo.full_name, interaction.user.login))
+                        j += 1
+                        print(f"  {i}.{j} [I]: [R] {repo.full_name} -> [U] {interaction.user.login}")
+                        f_inter.write(FIELDSEPARATOR.join([str(item) for item in interaction_data.values()]) + "\n")
+                        hp.esperar()
 
-                if INTERACTION_PER_REPO_LIMIT is not None and j > INTERACTION_PER_REPO_LIMIT:
-                    break
-                
+                    if j % FLUSH_BATCH == 0:
+                        f_inter.flush()
+                        f_users.flush()
+
+                    if INTERACTION_PER_REPO_LIMIT is not None and j > INTERACTION_PER_REPO_LIMIT:
+                        break
+            except GithubException:
+                print(f"  [R]: Limit from github reached for interaction to repo {repo.full_name}. Skip to next repo.")
+            
             if i % FLUSH_BATCH == 0:
                 f_repos.flush()
             # Maneja la cantidad de repos a recuperar
