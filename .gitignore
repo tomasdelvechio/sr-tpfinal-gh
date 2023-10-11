@@ -8,4 +8,6 @@ datasets-*
 output/*
 !output/.gitkeep
 
+backups/*
+
 configs.json
