@@ -1,5 +1,9 @@
 """
+Script que anexa extra data a la base de usuarios.
 
+Este script solo itera sobre los usuarios que faltan, por lo cual
+se puede ejecutar n veces sobre el archivo y solo agregará a quien 
+corresponda
 """
 
 import json
@@ -10,7 +14,9 @@ import helpers as hp
 from github import Auth
 from pathlib import Path
 from github import Github
+from github.GithubException import UnknownObjectException, RateLimitExceededException
 from github import enable_console_debug_logging
+import sys
 
 ########################################################################
 #   Configs section
@@ -36,40 +42,37 @@ FLUSH_BATCH = 20    # number of registers to flush data to disk - None for no fl
 # Cargamos la configuracion
 cfg = json.load(open(CFGFILE))
 
-# imprime por consola las llamadas a la API
-if cfg["debug"]:
-    enable_console_debug_logging()
-
-# backup de todo lo que toca este script por las dudas
-if cfg["backups"]:
-    suffix = "".join(str(uuid.uuid4()).split("-"))
-    
-    # Backup del directorio de salida
-    try:
-        OUTPUTDIR_BKP = BASEDIR / f"output/02-users-{suffix}"
-        shutil.copytree(str(OUTPUTDIR), str(OUTPUTDIR_BKP))
-    except FileNotFoundError:
-        # no existe, lo creamos
-        OUTPUTDIR.mkdir(parents=True, exist_ok=True)
-    # Backup del dataset generado
-    DATADIR_BKP = BASEDIR / f"datasets-{suffix}"
-    shutil.copytree(str(DATADIR), str(DATADIR_BKP))
-
-    print("Directorios de Backups: ")
-    print(f"    Datasets: {DATADIR_BKP}")
-    print(f"     Salidas:  {OUTPUTDIR_BKP}")
-
 # auth con github
 auth = Auth.Token(cfg["access_token"])
 g = Github(auth=auth)
 
 df_users = pd.read_csv(USERSCSV, sep=FIELDSEPARATOR, header=0)
-df_users["avatar_url"] = None
+try:
+    _ = df_users["avatar_url"]
+except KeyError:
+    # col no existe, se crea
+    df_users["avatar_url"] = None
 
-usernames = df_users.id.unique()
+# solo usernames que le falta el avatar
+usernames = df_users[df_users["avatar_url"].isnull()].id.unique()
 
+print(f"Comenzando la recuperación de datos extras sobre {len(usernames)} usuarios")
+cantidad_usuarios_eliminados = 0
 for username in usernames:
-    user = g.get_user(username)
+    try:
+        user = g.get_user(username)
+    except UnknownObjectException:
+        print(f"Usuario no existente: {username}")
+        df_users.loc[df_users["id"] == username, ["avatar_url"]] = False
+        cantidad_usuarios_eliminados += 1
+        continue
+    except RateLimitExceededException:
+        print(f"Limite de peticiones alcanzado. Se guardan los usuarios recuperados y continue mas tarde con el script")
+        break
     df_users.loc[df_users["id"] == username, ["avatar_url"]] = user.avatar_url
 
-df_users.to_csv(USERSCSV, sep=FIELDSEPARATOR, header=True)
+print(f"Finalizada la recuperación. Usuarios encontrados: {len(usernames)-cantidad_usuarios_eliminados}")
+print(f"Usuarios eliminados: {cantidad_usuarios_eliminados}")
+
+if cantidad_usuarios_eliminados > 0:
+    df_users.to_csv(USERSCSV, sep=FIELDSEPARATOR, header=True, index=False)
