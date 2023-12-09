@@ -57,7 +57,7 @@ conn = sqlite3.connect(DBPATH)
 c = conn.cursor()
 
 c.execute("""CREATE TABLE IF NOT EXISTS users (
-                id  text PRIMARY KEY,
+                id  text,
                 gh_id   text,
                 name    text,
                 bio text,
@@ -67,10 +67,11 @@ c.execute("""CREATE TABLE IF NOT EXISTS users (
                 creacion    text,
                 email   text,
                 following   text,
-                followers   text)""")
+                followers   text
+                PRIMARY KEY(id))""")
 
 c.execute("""CREATE TABLE IF NOT EXISTS repositories (
-                id  text PRIMARY KEY,
+                id  text,
                 es_fork text,
                 forks   text,
                 stars   text,
@@ -80,15 +81,17 @@ c.execute("""CREATE TABLE IF NOT EXISTS repositories (
                 subscribers text,
                 archived    text,
                 topics  text,
-                language    text)""")
+                language    text
+                PRIMARY KEY(id))""")
 
 c.execute("""CREATE TABLE IF NOT EXISTS interactions (
         repository text,
         user text,
-        date text)""")
+        date text,
+        PRIMARY KEY(repository,user))""")
 
-dfrepos.to_sql('repositories', conn, if_exists='replace')
-dfusers.to_sql('users', conn, if_exists='replace')
-dfinter.to_sql('interactions', conn, if_exists='replace')
+dfrepos.to_sql('repositories', conn, if_exists='replace', index=False)
+dfusers.to_sql('users', conn, if_exists='replace', index=False)
+dfinter.to_sql('interactions', conn, if_exists='replace', index=False)
 
 conn.close()
