@@ -57,37 +57,37 @@ conn = sqlite3.connect(DBPATH)
 c = conn.cursor()
 
 c.execute("""CREATE TABLE IF NOT EXISTS users (
-                id  text,
-                gh_id   text,
-                name    text,
-                bio text,
-                blog    text,
-                company text,
+                id          text,
+                gh_id       text,
+                name        text,
+                bio         text,
+                blog        text,
+                company     text,
                 location    text,
                 creacion    text,
-                email   text,
+                email       text,
                 following   text,
-                followers   text
+                followers   text,
                 PRIMARY KEY(id))""")
 
 c.execute("""CREATE TABLE IF NOT EXISTS repositories (
-                id  text,
-                es_fork text,
-                forks   text,
-                stars   text,
+                id          text,
+                es_fork     text,
+                forks       text,
+                stars       text,
                 watchers    text,
-                issues  text,
-                about   text,
+                issues      text,
+                about       text,
                 subscribers text,
                 archived    text,
-                topics  text,
-                language    text
+                topics      text,
+                language    text,
                 PRIMARY KEY(id))""")
 
 c.execute("""CREATE TABLE IF NOT EXISTS interactions (
-        repository text,
-        user text,
-        date text,
+        repository  text,
+        user        text,
+        date        text,
         PRIMARY KEY(repository,user))""")
 
 dfrepos.to_sql('repositories', conn, if_exists='replace', index=False)
