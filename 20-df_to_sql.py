@@ -57,7 +57,7 @@ conn = sqlite3.connect(DBPATH)
 c = conn.cursor()
 
 c.execute("""CREATE TABLE IF NOT EXISTS users (
-                id          text,
+                id          text    PRIMARY KEY,
                 gh_id       text,
                 name        text,
                 bio         text,
@@ -68,7 +68,7 @@ c.execute("""CREATE TABLE IF NOT EXISTS users (
                 email       text,
                 following   text,
                 followers   text,
-                PRIMARY KEY(id))""")
+                avatar_url  text)""")
 
 c.execute("""CREATE TABLE IF NOT EXISTS repositories (
                 id          text,
@@ -90,8 +90,19 @@ c.execute("""CREATE TABLE IF NOT EXISTS interactions (
         date        text,
         PRIMARY KEY(repository,user))""")
 
-dfrepos.to_sql('repositories', conn, if_exists='replace', index=False)
-dfusers.to_sql('users', conn, if_exists='replace', index=False)
-dfinter.to_sql('interactions', conn, if_exists='replace', index=False)
+conn.commit()
+
+# nos aseguramos que no haya duplicados en la base generada
+dfusers = dfusers.drop_duplicates(subset=['id'], ignore_index=True)
+dfrepos = dfrepos.drop_duplicates(subset=['id'], ignore_index=True)
+
+# pandas to_sql function no SABE crear PKs lo cual rompe todo
+#   https://stackoverflow.com/a/31045044
+# Por eso, lo mejor es crear la estructura y que no sea pisada por 
+#   pandas, sino que falle. Elimina la base de datos o no bajo tu
+#   propio riesgo.
+dfrepos.to_sql('repositories', conn, if_exists='append', index=False)
+dfusers.to_sql('users', conn, if_exists='append', index=False)
+dfinter.to_sql('interactions', conn, if_exists='append', index=False)
 
 conn.close()
