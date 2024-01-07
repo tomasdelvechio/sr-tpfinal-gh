@@ -96,6 +96,8 @@ conn.commit()
 dfusers = dfusers.drop_duplicates(subset=['id'], ignore_index=True)
 dfrepos = dfrepos.drop_duplicates(subset=['id'], ignore_index=True)
 
+dfinter = dfinter.dropna()
+
 # pandas to_sql function no SABE crear PKs lo cual rompe todo
 #   https://stackoverflow.com/a/31045044
 # Por eso, lo mejor es crear la estructura y que no sea pisada por 
