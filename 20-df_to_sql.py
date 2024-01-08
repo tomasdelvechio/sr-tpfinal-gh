@@ -66,8 +66,8 @@ c.execute("""CREATE TABLE IF NOT EXISTS users (
                 location    text,
                 creacion    text,
                 email       text,
-                following   text,
-                followers   text,
+                following   integer,
+                followers   integer,
                 avatar_url  text)""")
 
 c.execute("""CREATE TABLE IF NOT EXISTS repositories (
