@@ -89,14 +89,8 @@ for repo in repos:
         "topics": TOPICSEPARATOR.join(data_repo.topics),
         "language": TOPICSEPARATOR.join(lista_de_lenguajes),
     })
-    
-    #print(data_repo)
-    #break
-    #print(repo[0])
-    # Descargar la info del repo
-    # insertarla en la base
 
 c.close()
 
-dfrepos = pd.DataFrame.from_dict(repo_records, orient='columns') #pd.read_csv(REPOCSV, sep=FIELDSEPARATOR)
+dfrepos = pd.DataFrame.from_dict(repo_records, orient='columns')
 dfrepos.to_sql('repositories', conn, if_exists='append', index=False)
